@@ -19,6 +19,12 @@
             db.GetCollection<Transaction>(TRANSACTION_POOL_TABLE_NAME).DeleteAll();
         }
 
+        public void ClearTransactionPool()
+        {
+            using var db = new LiteDatabase(DB_NAME);
+            db.GetCollection<Transaction>(TRANSACTION_POOL_TABLE_NAME).DeleteAll();
+        }
+
         public void AddBlock(Block block)
         {
             using var db = new LiteDatabase(DB_NAME);
@@ -80,6 +86,36 @@
                     {
                         return transaction;
                     }
+                }
+            }
+
+            var transactionPoolCollection = db.GetCollection<Transaction>(TRANSACTION_POOL_TABLE_NAME);
+            var transactions = transactionPoolCollection.FindAll().ToList();
+            foreach (var transaction in transactions)
+            {
+                var currentTransactionHash = Utils.ComputeSha256Hash(Utils.ObjectToByteArray(transaction));
+                if (currentTransactionHash.SequenceEqual(hash))
+                {
+                    return transaction;
+                }
+            }
+
+            return null;
+        }
+
+        public Block GetBlockByHash(byte[] hash)
+        {
+            using var db = new LiteDatabase(DB_NAME);
+            var blocksCollection = db.GetCollection<Block>("blocks");
+            var blocks = blocksCollection.FindAll();
+
+            foreach (var block in blocks)
+            {
+                var currentBlockHash = Utils.ComputeSha256Hash(Utils.ObjectToByteArray(block));
+
+                if (currentBlockHash.SequenceEqual(hash))
+                {
+                    return block;
                 }
             }
 

@@ -15,11 +15,21 @@
 
             cryptoCore.InitializeBlockChain();
 
+            var blocks = cryptoCore.GetBlockChain();
+
             var balance = cryptoCore.GetBalance();
 
-            cryptoCore.CreateTransaction(Key2, 5);
+            cryptoCore.CreateTransaction(Key2, 1);
+            balance = cryptoCore.GetBalance();
+
+            cryptoCore.CreateTransaction(Key2, 1);
+            balance = cryptoCore.GetBalance();
+
+            cryptoCore.CreateTransaction(Key2, 1);
 
             balance = cryptoCore.GetBalance();
+
+            blocks = cryptoCore.GetBlockChain();
         }
     }
 }

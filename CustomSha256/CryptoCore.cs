@@ -72,7 +72,7 @@
             {
                 PreviousBlockHeaderHash = new byte[] { },
                 TransactionsHash = Utils.ComputeSha256Hash(Utils.ObjectToByteArray(genesisTransactions)),
-                // TODO
+                // TODO POF
                 ProofOfWorkCounter = 0,
                 Transactions = genesisTransactions,
             };
@@ -107,6 +107,11 @@
                         Value = amount,
                         ScriptPublicKey = recipientKey,
                     },
+                    new TransactionOutput
+                    {
+                        Value = transactionToSpend.Outputs[transactionToSpendOutputIndex].Value - amount,
+                        ScriptPublicKey = _currentNodeKeys,
+                    }
                 },
             };
 
@@ -133,7 +138,7 @@
                 return;
             }
 
-            // update local mine and all unspent transactions outputs
+            // remove spent outputs from local hash
             foreach (var input in transaction.Inputs)
             {
                 var previousTransaction = _dbAccessor.GetTransactionByHash(input.PreviousTransactionHash);
@@ -148,7 +153,39 @@
                 }
             }
 
+            // add new unspent outputs to local hash
+            for (var i = 0; i < transaction.Outputs.Length; i++)
+            {
+                var output = transaction.Outputs[i];
+                if (output.ScriptPublicKey == _currentNodeKeys)
+                {
+                    _myUnspentTransactionOutputs.Add((transaction, i));
+                    _allUnspentTransactionOutputs.Add((transaction, i));
+
+                    continue;
+                }
+
+                _allUnspentTransactionOutputs.Add((transaction, i));
+            }
+
             _dbAccessor.AddTransactionToPool(transaction);
+
+            var transactionPool = _dbAccessor.GetTransactionPool();
+            // TODO move to const
+            if (transactionPool.Count == 3)
+            {
+                CreateBlock();
+            }
+        }
+
+        public void AddBlock(Block block)
+        {
+            if (!IsBlockValid(block))
+            {
+                return;
+            }
+
+            _dbAccessor.AddBlock(block);
         }
 
         public int GetBalance()
@@ -173,6 +210,87 @@
         public void RefreshAllUnspentTransactionOutputsFromBlockChain()
         {
             _allUnspentTransactionOutputs = GetAllUnspentTransactionOutputs();
+        }
+
+        public List<Block> GetBlockChain()
+        {
+            return _dbAccessor.GetAllBlocks();
+        }
+
+        private void CreateBlock()
+        {
+            var transactionPool = _dbAccessor.GetTransactionPool();
+
+            var lastBlock = _dbAccessor.GetLastBlock();
+
+            var newBlock = new Block
+            {
+                PreviousBlockHeaderHash = Utils.ComputeSha256Hash(Utils.ObjectToByteArray(lastBlock)),
+                TransactionsHash = Utils.ComputeSha256Hash(Utils.ObjectToByteArray(transactionPool)),
+                // TODO POF
+                ProofOfWorkCounter = 0,
+                Transactions = transactionPool.ToArray(),
+            };
+
+            _dbAccessor.AddBlock(newBlock);
+            _dbAccessor.ClearTransactionPool();
+
+            // TODO send block
+        }
+
+        private bool IsBlockValid(Block block)
+        {
+            // check hash prev
+            var blck = _dbAccessor.GetBlockByHash(block.PreviousBlockHeaderHash);
+            if (blck == null)
+            {
+                return false;
+            }
+
+            // TODO POF
+
+            // check transactions
+            foreach (var transaction in block.Transactions)
+            {
+                // TODO refresh local transaction pool hash 
+
+                if (!IsTransactionValid(transaction))
+                {
+                    return false;
+                }
+
+                // remove spent outputs from local hash
+                foreach (var input in transaction.Inputs)
+                {
+                    var previousTransaction = _dbAccessor.GetTransactionByHash(input.PreviousTransactionHash);
+                    if (_myUnspentTransactionOutputs.Contains((previousTransaction, input.PreviousTransactionOutputIndex)))
+                    {
+                        _myUnspentTransactionOutputs.Remove((previousTransaction, input.PreviousTransactionOutputIndex));
+                    }
+
+                    if (_allUnspentTransactionOutputs.Contains((previousTransaction, input.PreviousTransactionOutputIndex)))
+                    {
+                        _allUnspentTransactionOutputs.Remove((previousTransaction, input.PreviousTransactionOutputIndex));
+                    }
+                }
+
+                // add new unspent outputs to local hash
+                for (var i = 0; i < transaction.Outputs.Length; i++)
+                {
+                    var output = transaction.Outputs[i];
+                    if (output.ScriptPublicKey == _currentNodeKeys)
+                    {
+                        _myUnspentTransactionOutputs.Add((transaction, i));
+                        _allUnspentTransactionOutputs.Add((transaction, i));
+
+                        continue;
+                    }
+
+                    _allUnspentTransactionOutputs.Add((transaction, i));
+                }
+            }
+
+            return true;
         }
 
         private bool IsTransactionValid(Transaction transaction)
